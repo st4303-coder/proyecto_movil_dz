@@ -1,5 +1,6 @@
-import * as SecureStore from "expo-secure-store";
+// src/services/apiFetch.js
 import { Alert } from "react-native";
+import { getItem, deleteItem } from "../utils/storage";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const APP_TOKEN = process.env.EXPO_PUBLIC_API_APP_TOKEN;
@@ -10,12 +11,12 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorizedCallback = fn;
 }
 
-export async function apiAuth(endpoint, options = {}) {
-  const userToken = await SecureStore.getItemAsync("user_token");
+export async function apiFetch(endpoint, options = {}) {
+  const userToken = await getItem("user_token");
 
   const headers = {
     "Content-Type": "application/json",
-    "app-token": APP_TOKEN, 
+    "x-api-token": APP_TOKEN,
     ...options.headers,
   };
 
@@ -32,11 +33,15 @@ export async function apiAuth(endpoint, options = {}) {
     config.body = JSON.stringify(config.body);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, config);
+  const normalizedEndpoint = endpoint.startsWith("/api")
+    ? endpoint
+    : `/api${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+
+  const response = await fetch(`${API_URL}${normalizedEndpoint}`, config);
 
   if (response.status === 401) {
-    await SecureStore.deleteItemAsync("user_token");
-    await SecureStore.deleteItemAsync("user_data");
+    await deleteItem("user_token");
+    await deleteItem("user_data");
     if (onUnauthorizedCallback) {
       onUnauthorizedCallback();
     }
@@ -55,7 +60,10 @@ export async function apiAuth(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data?.message || data?.msg || `Error HTTP ${response.status}`);
+    const fieldErrors = Array.isArray(data?.errors) && data.errors.length > 0
+      ? data.errors.map((e) => e.mensaje || e.message).filter(Boolean).join(" • ")
+      : "";
+    throw new Error(fieldErrors || data?.message || data?.msg || `Error HTTP ${response.status}`);
   }
 
   return data;
